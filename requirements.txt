@@ -1,0 +1,8 @@
+pyannote.audio
+torchaudio
+python-dotenv
+banglanlptoolkit
+transformers
+python-Levenshtein
+torch
+git+https://github.com/csebuetnlp/normalizer
