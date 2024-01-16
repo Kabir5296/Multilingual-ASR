@@ -2,10 +2,9 @@
 
 This repository contains multilingual ASR for Bengali and English. The models used are mostly token secured for company purposes. But you can load your own model and use the library as it is.
 
-Created By: \
-A F M Mahfuzul Kabir \
-Machine Learning Engineer, \
-ACI Limited
+Created by <b>A F M Mahfuzul Kabir</b> \
+<a href='mahfuzulkabir.com'>mahfuzulkabir.com</a> \
+https://www.linkedin.com/in/mahfuzulkabir \
 
 ### How to use:
 
