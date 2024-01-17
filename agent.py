@@ -6,10 +6,10 @@ import torchaudio, gc, os
 from dotenv import load_dotenv
 from datetime import datetime
 from Levenshtein import distance as levenshtein_distance
-from banglanlptoolkit import BnNLPNormalizer
+from banglanlptoolkit import BanglaPunctuation
 import numpy
 from typing import Type
-bnormalizer = BnNLPNormalizer(allow_en=False)
+bnpunct = BanglaPunctuation()
 
 load_dotenv()
 class CONFIG:
@@ -31,7 +31,7 @@ class CONFIG:
     
     
 class TranscriberAgent():
-    def __init__(self,CONFIG: Type[CONFIG] = CONFIG) -> None:
+    def __init__(self,CONFIG: CONFIG = CONFIG) -> None:
         '''
         This is the main agent. You can use the mehtods for raw transcription, diarization and conversation generation, adding punctuation and getting highlighted keywords.
         
@@ -103,31 +103,31 @@ class TranscriberAgent():
 
         self.diarization_pipeline.to(torch.device("cuda"))
         
-    def add_punctuations(self,raw_transcription: str) -> str:
-        '''
-        Adding punctuations to a string.
+    # def add_punctuations(self,raw_transcription: str) -> str:
+    #     '''
+    #     Adding punctuations to a string.
         
-        Arguements:
-        -----------
+    #     Arguements:
+    #     -----------
         
-            raw_transcription (str): String to add transcription to.
+    #         raw_transcription (str): String to add transcription to.
         
-        Returns:
-        --------
+    #     Returns:
+    #     --------
         
-            String with punctuation added line.
-        '''
-        text = ''
-        punctuations = self.punctuation_pipeline(raw_transcription)
-        for data in punctuations:
-            if data['word'][:2] == '##':
-                text += data['word'][2:]+ self.CONFIG.id2punc[self.CONFIG.label2id[data['entity']]]
-            else:
-                text += ' ' + data['word']+ self.CONFIG.id2punc[self.CONFIG.label2id[data['entity']]]
+    #         String with punctuation added line.
+    #     '''
+    #     text = ''
+    #     punctuations = self.punctuation_pipeline(raw_transcription)
+    #     for data in punctuations:
+    #         if data['word'][:2] == '##':
+    #             text += data['word'][2:]+ self.CONFIG.id2punc[self.CONFIG.label2id[data['entity']]]
+    #         else:
+    #             text += ' ' + data['word']+ self.CONFIG.id2punc[self.CONFIG.label2id[data['entity']]]
         
-        torch.cuda.empty_cache()
-        gc.collect()
-        return text
+    #     torch.cuda.empty_cache()
+    #     gc.collect()
+    #     return text
     
     def get_audio(self, audio_path: str) -> tuple:
         '''
@@ -178,8 +178,7 @@ class TranscriberAgent():
             transcription['text'] = transcription['text'].replace('প্রেসিডেন্ট প্রেসিডেন্ট','')
             transcription['text'] = transcription['text'].replace('প্রেসিডেন্ট প্রেসিডেন্ট প্রেসিডেন্ট','')
             transcription['text'] = transcription['text'].replace('আসসালামু আলাইকুম','')
-            
-            transcription['text'] = bnormalizer.normalize_bn([self.add_punctuations(transcription['text'])])[0]
+            transcription['text'] = bnpunct.add_punctuation(transcription['text'])
             
         elif language != 'bn':
             transcription = self.en_transcription_pipeline(audio_path,
