@@ -6,16 +6,17 @@ import torchaudio, gc, os
 from dotenv import load_dotenv
 from datetime import datetime
 from Levenshtein import distance as levenshtein_distance
-from banglanlptoolkit import BanglaPunctuation
-import numpy
+import numpy, whisperx
+from docx import Document
 from typing import Type
-bnpunct = BanglaPunctuation()
+from utils import get_audio, get_segments, post_process_bn, numpytobytes
 
 load_dotenv()
 class CONFIG:
     device='cuda:0' if torch.cuda.is_available() else 'cpu'
+    # device = 'cpu'
     chunk_length_s=30
-    batch_size=24
+    batch_size=12
     torch_dtype=torch.float16
     token = os.getenv('HUGGINGFACE_TOKEN')
     transcription_model='aci-mis-team/asr_whisper_train_trial3'
@@ -37,7 +38,6 @@ class TranscriberAgent():
         
         Arguements:
         -----------
-        
             CONFIG: Class of configs. It contains the following values in a class.
             
                 device: Device to be used for loading models and inference. By default, it looks for a GPU and if not available, CPU is used.
@@ -77,7 +77,7 @@ class TranscriberAgent():
             model=self.CONFIG.transcription_model,
             torch_dtype=self.CONFIG.torch_dtype,
             device=self.CONFIG.device,
-            model_kwargs={"use_flash_attention_2": is_flash_attn_2_available()},
+            model_kwargs={"attn_implementation": "flash_attention_2"} if is_flash_attn_2_available() else {"attn_implementation": "sdpa"},
             token=self.CONFIG.token,
             )
 
@@ -89,10 +89,9 @@ class TranscriberAgent():
             model_kwargs={"attn_implementation": "flash_attention_2"} if is_flash_attn_2_available() else {"attn_implementation": "sdpa"},
             )
         
-        self.diarization_pipeline = Pipeline.from_pretrained(
-            self.CONFIG.diarization_model,
-            use_auth_token=CONFIG.token,
-        )
+        self.diarization_pipeline = whisperx.DiarizationPipeline(model_name=self.CONFIG.diarization_model,
+                                                                 use_auth_token=self.CONFIG.token,
+                                                                 device=self.CONFIG.device)
         
         self.punctuation_pipeline = pipeline(
             task = 'ner',
@@ -100,56 +99,7 @@ class TranscriberAgent():
             device=self.CONFIG.device,
             token=self.CONFIG.token,
         )
-
-        self.diarization_pipeline.to(torch.device("cuda"))
-        
-    # def add_punctuations(self,raw_transcription: str) -> str:
-    #     '''
-    #     Adding punctuations to a string.
-        
-    #     Arguements:
-    #     -----------
-        
-    #         raw_transcription (str): String to add transcription to.
-        
-    #     Returns:
-    #     --------
-        
-    #         String with punctuation added line.
-    #     '''
-    #     text = ''
-    #     punctuations = self.punctuation_pipeline(raw_transcription)
-    #     for data in punctuations:
-    #         if data['word'][:2] == '##':
-    #             text += data['word'][2:]+ self.CONFIG.id2punc[self.CONFIG.label2id[data['entity']]]
-    #         else:
-    #             text += ' ' + data['word']+ self.CONFIG.id2punc[self.CONFIG.label2id[data['entity']]]
-        
-    #     torch.cuda.empty_cache()
-    #     gc.collect()
-    #     return text
     
-    def get_audio(self, audio_path: str) -> tuple:
-        '''
-        Load audio, resample and then return single channel of that audio and sampling rate.
-        
-        Arguements:
-        -----------
-       
-            audio_path (str): Path to the audio file as a string.
-        
-        Returns:
-        --------
-        
-            Returns a tuple of audio as ndarray and sampling rate as an integer.
-        '''
-        arr, org_sr = torchaudio.load(audio_path)
-        save_audio_path = audio_path.replace('/','')
-        if not os.path.exists(f'DATA/Data From Frontend/{save_audio_path}.wav'):
-            torchaudio.save(f'DATA/Data From Frontend/{save_audio_path}.wav',arr,sample_rate=org_sr)
-        arr = torchaudio.functional.resample(arr, orig_freq=org_sr, new_freq=16000)
-        return arr.numpy()[0], 16000
-        
     def get_raw_transcription(self, audio_path: [str, numpy.ndarray], language: str ='bn') -> str:
         '''
         Get raw audio transcription of an audio path or audio file.
@@ -167,29 +117,32 @@ class TranscriberAgent():
             Transcripted string with punctuation.
         '''
         if language == 'bn':
-            transcription = self.transcription_pipeline(audio_path,
+            transcriptions = self.transcription_pipeline(audio_path,
                                                     batch_size=self.CONFIG.batch_size,
                                                     chunk_length_s=self.CONFIG.chunk_length_s,
                                                     return_timestamps=False,
                                                     )
-            
-            transcription['text'] = transcription['text'].replace('ট্রেনিং প্রেসিডেন্ট','')
-            transcription['text'] = transcription['text'].replace('ট্রেনিং প্রেসিডেন্ট','')
-            transcription['text'] = transcription['text'].replace('প্রেসিডেন্ট প্রেসিডেন্ট','')
-            transcription['text'] = transcription['text'].replace('প্রেসিডেন্ট প্রেসিডেন্ট প্রেসিডেন্ট','')
-            transcription['text'] = transcription['text'].replace('আসসালামু আলাইকুম','')
-            transcription['text'] = bnpunct.add_punctuation(transcription['text'])
+            if type(transcriptions) == dict:
+                transcriptions = post_process_bn(transcriptions['text'])
+            elif type(transcriptions) == list:
+                for transcription in transcriptions:
+                    transcription['text'] = post_process_bn(transcription['text'])
             
         elif language != 'bn':
-            transcription = self.en_transcription_pipeline(audio_path,
+            transcriptions = self.en_transcription_pipeline(audio_path,
                                                     batch_size=self.CONFIG.batch_size,
                                                     chunk_length_s=self.CONFIG.chunk_length_s,
                                                     return_timestamps=False,
                                                     )
+            if type(transcriptions) == dict:
+                transcriptions = transcriptions['text']
+            elif type(transcriptions) == list:
+                for transcription in transcriptions:
+                    transcription['text'] = transcription['text']
             
         torch.cuda.empty_cache()
         gc.collect()
-        return transcription['text']
+        return transcriptions
     
     def create_conversation(self,audio_path: str,language: str ='bn') -> list:
         '''
@@ -206,43 +159,19 @@ class TranscriberAgent():
         --------
         
             List of list of strings. Each list in the entire list contains 2 strings, first one is the speaker tag and the second one is the transcribed string.        
-        '''
-        audio_array, org_sr = self.get_audio(audio_path)
-        diarization = self.diarization_pipeline(audio_path)
-        diarize = []
-        prev_sp_tag = -1
+        '''        
+        segments, _, speakers = get_segments(audio_path=audio_path, diarization_pipeline=self.diarization_pipeline)
         
-        for index, data in enumerate(diarization.itertracks(yield_label=True)):
-            new_start = int(data[0].start * org_sr)
-            new_end = int(data[0].end * org_sr)
-            sp_tag = data[2]
-            if index == 0:
-                prev_start = new_start
-                prev_end = new_end
-                prev_sp_tag = sp_tag
-                continue
-            
-            if sp_tag != prev_sp_tag:
-                transcription = self.get_raw_transcription(audio_array[prev_start:prev_end],language=language)
-                if transcription != ' ' and transcription != '':
-                    diarize.append([prev_sp_tag, transcription])
-                prev_end = new_end
-                prev_start = new_start
-                prev_sp_tag = sp_tag
-            elif sp_tag == prev_sp_tag:
-                prev_end = new_end
-            try:
-                if diarize[-1][0] == diarize[-2][0]:
-                    diarize[-2][1] = diarize[-2][1] + ' ' + diarize[-1][1]
-                    del diarize[-1]
-            except:
-                pass
-
-        transcription = self.get_raw_transcription(audio_array[prev_start:prev_end],language=language)
-        if transcription != ' ' and transcription != '':
-            diarize.append([prev_sp_tag, transcription])
+        diarize = []
+        diarized = self.get_raw_transcription(segments, language=language)
+        del segments
+        for speaker, transcription in zip(speakers, diarized):
+            if transcription['text'] != '':
+                diarize.append([speaker, transcription['text']])
+        
         torch.cuda.empty_cache()
         gc.collect()
+        
         return diarize
     
     def get_keywords(self, audio_path: [str, numpy.ndarray], keywords: list = CONFIG.keywords, language: str='bn') -> dict:
@@ -281,6 +210,35 @@ class TranscriberAgent():
         torch.cuda.empty_cache()
         gc.collect()
         return {'keys':keys, 'count':key_dict}
+    
+    def save_to_docx(self, conversation: list, output_dir: str = 'Saved Docs') -> str:
+        '''
+        The function saves and returns a docx file in the defined output directory.
+        
+        Arguements:
+        -----------
+            output_dir (str, Optional): Path to save the doc file. Default is 'Saved Docs' in base directory.
+            
+        Returns:
+        ---------
+            List: The final transcripted conversation with edited speaker tags.
+        '''
+        if not os.path.exists(output_dir):
+            os.mkdir(output_dir)
+        
+        video_title = conversation[0][1]
+        document = Document()
+        document.add_heading(video_title)
+        
+        for line in conversation:
+            if line[0] == 'title':
+                continue
+            document.add_paragraph(line[0]+': ' +line[1])
+            
+        docx_path = os.path.join(output_dir, (video_title+'.docx'))
+        document.save(docx_path)
+        print(f"Document Saved at '{docx_path}'")
+        return docx_path
 
 if __name__=='__main__':
     agent = TranscriberAgent()

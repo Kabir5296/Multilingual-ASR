@@ -1,3 +1,6 @@
+pip
+bnunicodenormalizer
+langdetect
 pyannote.audio
 torchaudio
 python-dotenv
@@ -6,3 +9,9 @@ transformers
 python-Levenshtein
 torch
 git+https://github.com/csebuetnlp/normalizer
+fastapi
+uvicorn
+python-multipart
+git+https://github.com/m-bain/whisperx.git
+python-docx
+gradio
