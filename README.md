@@ -1,6 +1,6 @@
 ## Multilingual ASR
 
-This repository contains multilingual ASR for Bengali and English. The models used are mostly token secured for company purposes. But you can load your own model and use the library as it is.
+This repository contains multilingual ASR for Bengali and English.
 
 Created by <b>A F M Mahfuzul Kabir</b> \
 <a href='mahfuzulkabir.com'>mahfuzulkabir.com</a> \
@@ -26,11 +26,41 @@ keywords = agent.get_keywords(audio_path)
 keywords = agent.get_keywords(audio_path, keywords=list_of_keywords)
 ```
 
-Summarize:
+### FastAPI Integration
+
+The repository is now integrated with FastAPI for hosting endpoints.
+
 ```
-conversation = agent.create_conversation(audio_path)
-dialogue = ''
-for line in conversation:
-    dialogue += ':'.join(line) + '. '
-summary = summarizer_agent.summary_kore_felo(dialogue)
+Endpoint 1, 2 & 3: Transcribe, Converse, Summarize
+    Input:  'file': String = File path to the audio file.
+            'language' : String = 'bn' for Bengali, 'en' for English
+    
+    Output: Dictionary =    {'content': 
+                                {'filename': Filename, 
+                                'transcription': Transcription (string) for endpoint 1, List of list for endpoint 2, Summary (string) for endpoint 3
+                                }
+                            }
+```
+
+```
+Endpoint 4: Get Keyword
+    Input:  'file' : String = File path to the audio file.
+            'keyword_str' : String = String with keywords separated with comma ','. Example: 'Apple, Mango, Juice'
+            'language' : String = 'bn' for Bengali, 'en' for English
+
+    Output: Dictionary =    {'content': 
+                                {'filename': Filename, 
+                                'keywords': 
+                                    {
+                                        'keys': Keywords given in the input,
+                                        'count': 
+                                            {
+                                                'key1' : count,
+                                                'key2' : count,
+                                                .
+                                                .
+                                            }
+                                    }
+                                }
+                            }
 ```

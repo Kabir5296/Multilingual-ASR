@@ -4,3 +4,4 @@ test.ipynb
 venv
 .vscode
 test_api.py
+MODELS/

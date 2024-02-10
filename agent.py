@@ -3,28 +3,28 @@ from transformers import pipeline
 from transformers.utils import is_flash_attn_2_available
 from pyannote.audio import Pipeline
 import torchaudio, gc, os
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 from datetime import datetime
 from Levenshtein import distance as levenshtein_distance
 import numpy, whisperx
 from docx import Document
-from typing import Type
+from typing import Type, Union
 from utils import get_audio, get_segments, post_process_bn, numpytobytes
 
-load_dotenv()
+# load_dotenv()
 class CONFIG:
     device='cuda:0' if torch.cuda.is_available() else 'cpu'
     # device = 'cpu'
     chunk_length_s=30
     batch_size=12
     torch_dtype=torch.float16
-    token = os.getenv('HUGGINGFACE_TOKEN')
-    transcription_model='aci-mis-team/asr_whisper_train_trial3'
+    # token = os.getenv('HUGGINGFACE_TOKEN')
+    transcription_model='kabir5297/whisper_bn_medium'
     diarization_model="pyannote/speaker-diarization-3.1"
     en_transcription_model = 'distil-whisper/distil-large-v2'
-    punctuation_model = 'aci-mis-team/punctuation_tugstugi'
+    punctuation_model = 'kabir5297/bn_punctuation_model'
     default_language = 'bn'
-    keywords = ['ডিউলাক্স','এসিআই','নিরোলাক']
+    keywords = ['ডিউলাক্স','নিরোলাক']
     threshold = 0.75
     id2label = {0: 'LABEL_0', 1: 'LABEL_1', 2: 'LABEL_2', 3: 'LABEL_3'}
     label2id = {'LABEL_0': 0, 'LABEL_1': 1, 'LABEL_2': 2, 'LABEL_3': 3}
@@ -78,7 +78,7 @@ class TranscriberAgent():
             torch_dtype=self.CONFIG.torch_dtype,
             device=self.CONFIG.device,
             model_kwargs={"attn_implementation": "flash_attention_2"} if is_flash_attn_2_available() else {"attn_implementation": "sdpa"},
-            token=self.CONFIG.token,
+            # token=self.CONFIG.token,
             )
 
         self.en_transcription_pipeline = pipeline(
@@ -97,10 +97,10 @@ class TranscriberAgent():
             task = 'ner',
             model=self.CONFIG.punctuation_model,
             device=self.CONFIG.device,
-            token=self.CONFIG.token,
+            # token=self.CONFIG.token,
         )
     
-    def get_raw_transcription(self, audio_path: [str, numpy.ndarray], language: str ='bn') -> str:
+    def get_raw_transcription(self, audio_path: Union[str, numpy.ndarray], language: str ='bn') -> str:
         '''
         Get raw audio transcription of an audio path or audio file.
         
@@ -174,7 +174,7 @@ class TranscriberAgent():
         
         return diarize
     
-    def get_keywords(self, audio_path: [str, numpy.ndarray], keywords: list = CONFIG.keywords, language: str='bn') -> dict:
+    def get_keywords(self, audio_path: Union[str, numpy.ndarray], keywords: list = CONFIG.keywords, language: str='bn') -> dict:
         '''
         Count specified keywords from the transcription and return frequency of each words.
         
@@ -210,35 +210,6 @@ class TranscriberAgent():
         torch.cuda.empty_cache()
         gc.collect()
         return {'keys':keys, 'count':key_dict}
-    
-    def save_to_docx(self, conversation: list, output_dir: str = 'Saved Docs') -> str:
-        '''
-        The function saves and returns a docx file in the defined output directory.
-        
-        Arguements:
-        -----------
-            output_dir (str, Optional): Path to save the doc file. Default is 'Saved Docs' in base directory.
-            
-        Returns:
-        ---------
-            List: The final transcripted conversation with edited speaker tags.
-        '''
-        if not os.path.exists(output_dir):
-            os.mkdir(output_dir)
-        
-        video_title = conversation[0][1]
-        document = Document()
-        document.add_heading(video_title)
-        
-        for line in conversation:
-            if line[0] == 'title':
-                continue
-            document.add_paragraph(line[0]+': ' +line[1])
-            
-        docx_path = os.path.join(output_dir, (video_title+'.docx'))
-        document.save(docx_path)
-        print(f"Document Saved at '{docx_path}'")
-        return docx_path
 
 if __name__=='__main__':
     agent = TranscriberAgent()
